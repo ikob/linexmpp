@@ -176,7 +176,22 @@ async function xmpp2line(stanza) {
       console.log('No correponding lineuser....');
       return;
     }
-    const message = { type: 'text', text: stanza.getChildText("body")};
+    const message = { type: 'text', text: stanza.getChildText("body")/*,
+      'quickReply':{
+        'items':[
+           {
+             'type': 'action',
+             'action':{
+               'type':'location',
+               'label':'Here Iam'
+//             'type':'uri',
+//             'label': 'to ITRC',
+//             'uri':'https://www.itrc.net'
+	     }
+           }
+        ]
+      }*/
+    };
     if(lineevents[lineuid]){
 	const replyToken = lineevents[lineuid]['token'];
 	delete lineevents[lineuid];
@@ -190,33 +205,53 @@ async function xmpp2line(stanza) {
 
 async function line2xmpp(event) {
   let first = false;
-  if (event.type !== 'message' || event.message.type !== 'text') {
-    // ignore non-text-message event
-    return Promise.resolve(null);
-  }
-  const from = event.source.userId;
-  const lineuid = from.toLowerCase();
-  lineevents[lineuid] = {token:event.replyToken, timestamp:Date.now()};
+  switch(event.type){
+    case 'message':
+      const from = event.source.userId;
+      const lineuid = from.toLowerCase();
+      lineevents[lineuid] = {token:event.replyToken, timestamp:Date.now()};
+      const to = rosters.representive;
 
-  if(!lineusers[lineuid]){
-    lineusers[lineuid] = {lineId: from};
-  }
+      if(!lineusers[lineuid]){
+        lineusers[lineuid] = {lineId: from};
+      }
 
-  if(!lineusers[lineuid]['LineName']){
-    first = true;
-    let profile = await lineClient.getProfile(from);
-    lineusers[lineuid]['LineName'] = {name:profile.displayName, timestamp:Date.now()};
-  }
+      if(!lineusers[lineuid]['LineName']){
+        first = true;
+        let profile = await lineClient.getProfile(from);
+        lineusers[lineuid]['LineName'] = {name:profile.displayName, timestamp:Date.now()};
+      }
+      let message;
 
-  const to = rosters.representive;
-  const message = xml(
-    "message",
-    { type: "chat", from: from + '@' + domain + '/' + resource, to: to, id: event.message.id},
-    xml("body", {}, event.message.text),
-    first ? xml("nick", {xmlns:'http://jabber.org/protocol/nick'}, lineusers[lineuid]['LineName']['name']):null
-  );
-  await xmpp.send(message);
-  return Promise.resolve(null);
+      switch(event.message.type){
+        case 'text':
+          message = xml(
+            "message",
+            { type: "chat", from: from + '@' + domain + '/' + resource, to: to, id: event.message.id},
+            xml("body", {}, event.message.text),
+            first ? xml("nick", {xmlns:'http://jabber.org/protocol/nick'}, lineusers[lineuid]['LineName']['name']):null
+          );
+	  break;
+        case 'location':
+//      Obtain street address
+          message = xml(
+            "message",
+            { type: "chat", from: from + '@' + domain + '/' + resource, to: to, id: event.message.id},
+            xml("body", {}, event.message.address),
+            first ? xml("nick", {xmlns:'http://jabber.org/protocol/nick'}, lineusers[lineuid]['LineName']['name']):null
+          );
+	  
+          break;
+        default:
+	  break;
+      }
+      await xmpp.send(message);
+      return Promise.resolve(null);
+      break;
+    default:
+      return Promise.resolve(null);
+      break;
+  }
 }
 
 const server = https.createServer( ex_options, app ).listen( 3000, function(){
